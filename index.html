@@ -194,128 +194,176 @@
   </footer>
 
   <script>
-    const scriptURL = "https://script.google.com/macros/s/AKfycbxSM47Hbj1kG5P5dIVfppheRLe_yCMdtw-VVPrZ3gdRj42r03tYqXVEYC7jLFzP4tuj/exec";
+  // Replace with your deployed Web App URL (must be the latest deployment)
+  const scriptURL = "https://script.google.com/macros/s/AKfycbz5kavgik9Q2vYTTU1Ll8YkTNU0TdV_Co91Y1WnB0N6gbzyLRTVzmp4BlxhTwmTuscK/exec";
 
-    // Clear form
-    function clearForm() {
-      document.getElementById("trans_date").value = '';
-      document.getElementById("or_number").value = '';
-      document.getElementById("payer_name").value = '';
-      document.getElementById("tuition").value = '';
-      document.getElementById("miscellaneous").value = '';
-      document.getElementById("books").value = '';
-      document.getElementById("other").value = '';
-      document.getElementById("transaction_type_other").value = '';
-      document.getElementById("change_amount").value = '';
+  // Clear form
+  function clearForm() {
+    document.getElementById("trans_date").value = '';
+    document.getElementById("or_number").value = '';
+    document.getElementById("payer_name").value = '';
+    document.getElementById("tuition").value = '';
+    document.getElementById("miscellaneous").value = '';
+    document.getElementById("books").value = '';
+    document.getElementById("other").value = '';
+    document.getElementById("change_amount").value = '';
+  }
+
+  // Save Transaction
+  async function saveTransaction() {
+    const data = {
+      trans_date: document.getElementById("trans_date").value,
+      or_number: document.getElementById("or_number").value.trim(),
+      payer_name: document.getElementById("payer_name").value.trim(),
+      tuition: document.getElementById("tuition").value.trim(),
+      miscellaneous: document.getElementById("miscellaneous").value.trim(),
+      books: document.getElementById("books").value.trim(),
+      other: document.getElementById("other").value.trim(),
+      change_amount: document.getElementById("change_amount").value.trim()
+    };
+
+    // Basic required fields
+    if (!data.trans_date || !data.or_number || !data.payer_name) {
+      alert("Please fill Date, OR Number, and Payer Name.");
+      return;
     }
 
-    // Save Transaction
-    async function saveTransaction() {
-      const data = {
-        trans_date: document.getElementById("trans_date").value,
-        or_number: document.getElementById("or_number").value.trim(),
-        payer_name: document.getElementById("payer_name").value.trim(),
-        tuition: document.getElementById("tuition").value.trim(),
-        miscellaneous: document.getElementById("miscellaneous").value.trim(),
-        books: document.getElementById("books").value.trim(),
-        other: document.getElementById("other").value.trim(),
-        transaction_type_other: document.getElementById("transaction_type_other")?.value.trim(),
-        change_amount: document.getElementById("change_amount").value.trim()
-      };
+    // Convert empty numeric strings to ""
+    if (data.tuition === "") data.tuition = "";
+    if (data.miscellaneous === "") data.miscellaneous = "";
+    if (data.books === "") data.books = "";
+    if (data.change_amount === "") data.change_amount = "";
 
-      if (!data.trans_date || !data.or_number || !data.payer_name) {
-        alert("Please fill Date, OR Number, and Payer Name.");
+    try {
+      const res = await fetch(scriptURL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+
+      // If network-level error occurs, fetch will throw; otherwise check response status
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error("Server returned " + res.status + " " + text);
+      }
+
+      const result = await res.json();
+      if (result.status === "success") {
+        alert("Transaction saved!");
+        clearForm();
+        fetchTransactions();
+      } else {
+        alert("Error: " + (result.message || JSON.stringify(result)));
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Network or script error: " + err.message);
+    }
+  }
+
+  // Fetch Transactions
+  async function fetchTransactions() {
+    try {
+      const res = await fetch(scriptURL);
+      if (!res.ok) throw new Error("Network response was not ok: " + res.status);
+      const data = await res.json();
+      const tbody = document.getElementById("transactionsBody");
+      tbody.innerHTML = '';
+
+      if (!data.rows || data.rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">No transactions recorded</td></tr>`;
+        // reset counters
+        document.getElementById("cardTodayCount").textContent = "0";
+        document.getElementById("cardWeekTotal").textContent = "₱0.00";
+        document.getElementById("cardBalance").textContent = "₱0.00";
         return;
       }
+
+      // Simple aggregates (example) - you can improve as needed
+      let todayCount = 0;
+      let weekTotal = 0;
+      let balance = 0;
+
+      data.rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${r.trans_date || r.timestamp || ''}</td>
+          <td>${r.or_number || ''}</td>
+          <td>${r.payer_name || ''}</td>
+          <td>${r.tuition || ''}</td>
+          <td>${r.miscellaneous || ''}</td>
+          <td>${r.books || ''}</td>
+          <td>${r.other || ''}</td>
+          <td></td>
+          <td>${r.change_amount || ''}</td>
+          <td>
+            <button class="btn btn-sm btn-danger deleteBtn" data-id="${r.id}">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+
+        // Attempt to compute numeric totals (coerce or ignore non-numeric)
+        const tuition = parseFloat(r.tuition) || 0;
+        const misc = parseFloat(r.miscellaneous) || 0;
+        const books = parseFloat(r.books) || 0;
+        const other = parseFloat(r.other) || 0;
+        const change = parseFloat(r.change_amount) || 0;
+
+        const rowTotal = tuition + misc + books + other - change;
+        balance += rowTotal;
+      });
+
+      // set simple displays (formatting)
+      document.getElementById("cardTodayCount").textContent = data.rows.length;
+      document.getElementById("cardWeekTotal").textContent = "₱" + balance.toFixed(2);
+      document.getElementById("cardBalance").textContent = "₱" + balance.toFixed(2);
+
+    } catch (err) {
+      console.error(err);
+      const tbody = document.getElementById("transactionsBody");
+      tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">Error loading transactions</td></tr>`;
+    }
+  }
+
+  // Delete Transaction
+  document.addEventListener("click", async function (e) {
+    if (e.target.classList.contains("deleteBtn")) {
+      const id = e.target.getAttribute("data-id");
+      if (!confirm("Are you sure you want to delete this transaction?")) return;
 
       try {
         const res = await fetch(scriptURL, {
           method: "POST",
-          body: JSON.stringify(data),
-          headers: { "Content-Type": "application/json" }
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deleteId: id })
         });
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error("Server returned " + res.status + " " + text);
+        }
+
         const result = await res.json();
         if (result.status === "success") {
-          alert("Transaction saved!");
-          clearForm();
           fetchTransactions();
         } else {
-          alert("Error: " + result.message);
+          alert("Error deleting: " + (result.message || JSON.stringify(result)));
         }
       } catch (err) {
         console.error(err);
-        alert("Network or script error");
+        alert("Error deleting transaction: " + err.message);
       }
     }
+  });
 
-    // Fetch Transactions
-    async function fetchTransactions() {
-      try {
-        const res = await fetch(scriptURL);
-        const data = await res.json();
-        const tbody = document.getElementById("transactionsBody");
-        tbody.innerHTML = '';
-
-        if (!data.rows || data.rows.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted">No transactions recorded</td></tr>`;
-          return;
-        }
-
-        data.rows.forEach(r => {
-          const tr = document.createElement("tr");
-          tr.innerHTML = `
-        <td>${r.trans_date}</td>
-        <td>${r.or_number}</td>
-        <td>${r.payer_name}</td>
-        <td>${r.tuition}</td>
-        <td>${r.miscellaneous}</td>
-        <td>${r.books}</td>
-        <td>${r.other}</td>
-        <td>${r.transaction_type_other}</td>
-        <td>${r.change_amount}</td>
-        <td>
-          <button class="btn btn-sm btn-danger deleteBtn" data-id="${r.id}">Delete</button>
-        </td>
-      `;
-          tbody.appendChild(tr);
-        });
-      } catch (err) {
-        console.error(err);
-      }
-    }
-
-    // Delete Transaction
-    document.addEventListener("click", async function (e) {
-      if (e.target.classList.contains("deleteBtn")) {
-        const id = e.target.getAttribute("data-id");
-        if (!confirm("Are you sure you want to delete this transaction?")) return;
-
-        try {
-          const res = await fetch(scriptURL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ deleteId: id })
-          });
-          const result = await res.json();
-          if (result.status === "success") {
-            fetchTransactions();
-          } else {
-            alert(result.message);
-          }
-        } catch (err) {
-          alert("Error deleting transaction");
-          console.error(err);
-        }
-      }
-    });
-
-    document.getElementById("saveBtn").addEventListener("click", saveTransaction);
-    document.getElementById("clearBtn").addEventListener("click", clearForm);
-    document.addEventListener("DOMContentLoaded", fetchTransactions);
-  </script>
+  document.getElementById("saveBtn").addEventListener("click", saveTransaction);
+  document.getElementById("clearBtn").addEventListener("click", clearForm);
+  document.addEventListener("DOMContentLoaded", fetchTransactions);
+</script>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 
 
 </html>
+
